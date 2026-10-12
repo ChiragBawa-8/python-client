@@ -11,13 +11,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 import time
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
-
-from websockets.asyncio import client as _asyncio_client
-from websockets.exceptions import ConnectionClosedError, InvalidStatus
-from websockets.sync import client as _sync_client
 
 from . import constants
 from .client import NewsDataApiClient, _redact_url, _validate_params
@@ -26,6 +23,15 @@ from .exceptions import (
     NewsdataWebSocketAuthError,
     NewsdataWebSocketError,
 )
+
+# websockets requires Python 3.10+ and is not installed on older versions,
+# where only the REST client is available.
+_WEBSOCKET_SUPPORTED = sys.version_info >= (3, 10)
+
+if _WEBSOCKET_SUPPORTED:
+    from websockets.asyncio import client as _asyncio_client
+    from websockets.exceptions import ConnectionClosedError, InvalidStatus
+    from websockets.sync import client as _sync_client
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +115,9 @@ class NewsDataApiWebSocket:
     always raises :class:`~newsdataapi.NewsdataWebSocketAuthError` and is
     never retried.
 
+    Requires Python 3.10 or newer; on older versions the constructor raises
+    :class:`~newsdataapi.NewsdataWebSocketError`.
+
     Args:
         api_client: The :class:`~newsdataapi.NewsDataApiClient` that supplies
             the API key and performs the management HTTP calls. Not closed by
@@ -147,6 +156,12 @@ class NewsDataApiWebSocket:
         additional_headers: dict[str, str] | None = None,
         proxy: str | None = None,
     ) -> None:
+        if not _WEBSOCKET_SUPPORTED:
+            raise NewsdataWebSocketError(
+                "NewsDataApiWebSocket requires Python 3.10 or newer (this is Python "
+                f"{sys.version_info.major}.{sys.version_info.minor}); "
+                "NewsDataApiClient works on Python 3.8+"
+            )
         self.api_client = api_client
         self._base_url = base_url
         self._reconnect = reconnect

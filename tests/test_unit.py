@@ -7,6 +7,7 @@ API key.
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ from newsdataapi import (
     NewsdataRateLimitError,
     NewsdataServerError,
     NewsdataValidationError,
+    NewsdataWebSocketError,
     save_to_csv,
 )
 from newsdataapi.client import (
@@ -1348,7 +1350,23 @@ WS_REGISTER_URL = "https://newsdata.io/api/1/websocket/register"
 WS_FETCH_URL = "https://newsdata.io/api/1/websocket/fetch"
 WS_DELETE_URL = "https://newsdata.io/api/1/websocket/delete"
 
+# NewsDataApiWebSocket can't be constructed below Python 3.10.
+requires_websocket = pytest.mark.skipif(
+    sys.version_info < (3, 10), reason="WebSocket support requires Python 3.10+"
+)
 
+
+def test_websocket_requires_python_310(
+    client: NewsDataApiClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Below Python 3.10, construction fails up front with a clear error."""
+    monkeypatch.setattr("newsdataapi.websocket._WEBSOCKET_SUPPORTED", False)
+    with pytest.raises(NewsdataWebSocketError, match="requires Python 3.10"):
+        NewsDataApiWebSocket(client)
+
+
+@requires_websocket
 def test_websocket_register_posts_query_params(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1375,6 +1393,7 @@ def test_websocket_register_posts_query_params(
     assert not sent.body  # params travel in the query string, not a body
 
 
+@requires_websocket
 def test_websocket_register_always_sends_news_type_latest(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1390,6 +1409,7 @@ def test_websocket_register_always_sends_news_type_latest(
     assert "news_type=latest" in sent_url
 
 
+@requires_websocket
 def test_websocket_register_mutex_validation_applies(
     client: NewsDataApiClient,
 ) -> None:
@@ -1398,6 +1418,7 @@ def test_websocket_register_mutex_validation_applies(
         NewsDataApiWebSocket(client).websocket_register(q="a", qInTitle="b")
 
 
+@requires_websocket
 def test_websocket_register_raw_query(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1414,6 +1435,7 @@ def test_websocket_register_raw_query(
     assert "news_type=latest" in sent_url
 
 
+@requires_websocket
 def test_websocket_register_raw_query_rejects_unknown_param(
     client: NewsDataApiClient,
 ) -> None:
@@ -1422,6 +1444,7 @@ def test_websocket_register_raw_query_rejects_unknown_param(
         NewsDataApiWebSocket(client).websocket_register(raw_query="q=pizza&size=10")
 
 
+@requires_websocket
 def test_websocket_register_sends_excludedomainurl(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1439,6 +1462,7 @@ def test_websocket_register_sends_excludedomainurl(
     assert "excludedomainurl=bbc.com%2Ccnn.com" in sent_url
 
 
+@requires_websocket
 def test_websocket_register_duplicate_409(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1466,6 +1490,7 @@ def test_websocket_register_duplicate_409(
     assert len(mocked_responses.calls) == 1  # 4xx is never retried
 
 
+@requires_websocket
 def test_websocket_register_403_raises_auth(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1476,6 +1501,7 @@ def test_websocket_register_403_raises_auth(
         NewsDataApiWebSocket(client).websocket_register(q="pizza")
 
 
+@requires_websocket
 def test_websocket_register_429_exhausts_to_rate_limit(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1488,6 +1514,7 @@ def test_websocket_register_429_exhausts_to_rate_limit(
         NewsDataApiWebSocket(client).websocket_register(q="pizza")
 
 
+@requires_websocket
 def test_websocket_fetch_returns_queries(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1518,6 +1545,7 @@ def test_websocket_fetch_returns_queries(
     assert "apikey=test_key_xxx" in sent_url
 
 
+@requires_websocket
 def test_websocket_delete_sends_registration_id(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1537,6 +1565,7 @@ def test_websocket_delete_sends_registration_id(
     assert "registration_id=abc123" in sent_url
 
 
+@requires_websocket
 def test_websocket_delete_unknown_id_404(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -1547,6 +1576,7 @@ def test_websocket_delete_unknown_id_404(
     assert exc_info.value.status_code == 404
 
 
+@requires_websocket
 @pytest.mark.parametrize("bad_id", ["", None, 123])
 def test_websocket_delete_rejects_bad_registration_id(
     client: NewsDataApiClient,

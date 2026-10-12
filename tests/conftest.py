@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterator
 
 import pytest
 import responses
 
 from newsdataapi import NewsDataApiClient
+
+# test_websocket.py imports websockets, which is only installed on Python 3.10+.
+collect_ignore = ["test_websocket.py"] if sys.version_info < (3, 10) else []
 
 
 @pytest.fixture
