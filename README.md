@@ -27,7 +27,7 @@ If you use [uv](https://github.com/astral-sh/uv):
 uv add newsdataapi
 ```
 
-Supports Python 3.10 through 3.14. The runtime dependencies are `requests` (REST) and `websockets` (real-time streaming).
+Supports Python 3.8 through 3.14. The runtime dependencies are `requests` (REST) and `websockets` (real-time streaming). `NewsDataApiWebSocket` requires Python 3.10 or newer, so `websockets` is only installed there; on 3.8 and 3.9 the REST client works as usual.
 
 ## Quickstart
 
@@ -89,7 +89,7 @@ for page in client.latest_api(q="news", paginate=True, max_pages=5):
 
 ## Real-time news (WebSocket)
 
-Register a query first — the returned `registration_id` identifies it from then on:
+Requires Python 3.10 or newer. Register a query first — the returned `registration_id` identifies it from then on:
 
 ```python
 from newsdataapi import NewsDataApiClient, NewsDataApiWebSocket
