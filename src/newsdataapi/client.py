@@ -1191,11 +1191,12 @@ class NewsDataApiClient:
 
             elapsed = time.perf_counter() - t0
             logger.debug(
-                "%d %s (%.2fs) X-API-Limit-Remaining=%s",
+                "%d %s (%.2fs) X-API-Limit-Remaining=%s X-APIKEY-Limit-Remaining=%s",
                 response.status_code,
                 response.reason,
                 elapsed,
                 response.headers.get("X-API-Limit-Remaining"),
+                response.headers.get("X-APIKEY-Limit-Remaining"),
             )
 
             try:
@@ -1230,14 +1231,13 @@ class NewsDataApiClient:
             # Rate limit.
             if response.status_code == 429:
                 retry_after = _parse_retry_after(response.headers.get("Retry-After"))
-                if (
-                    _extract_error_code(body) in _QUOTA_EXHAUSTED_CODES
-                    or attempt >= self.max_retries
-                ):
+                error_code = _extract_error_code(body)
+                if error_code in _QUOTA_EXHAUSTED_CODES or attempt >= self.max_retries:
                     raise NewsdataRateLimitError(
                         body,
                         status_code=429,
                         response_body=body if isinstance(body, dict) else None,
+                        code=error_code,
                         retry_after=retry_after,
                     )
                 sleep_for = (
@@ -1261,6 +1261,7 @@ class NewsDataApiClient:
                         body,
                         status_code=response.status_code,
                         response_body=body if isinstance(body, dict) else None,
+                        code=_extract_error_code(body),
                     )
                 logger.warning(
                     "%d server error (attempt %d/%d)",
@@ -1277,6 +1278,7 @@ class NewsDataApiClient:
                     body,
                     status_code=response.status_code,
                     response_body=body if isinstance(body, dict) else None,
+                    code=_extract_error_code(body),
                 )
 
             # Other 4xx — never retry.
@@ -1284,6 +1286,7 @@ class NewsDataApiClient:
                 body,
                 status_code=response.status_code,
                 response_body=body if isinstance(body, dict) else None,
+                code=_extract_error_code(body),
             )
 
         # Defensive: the loop always either returns or raises. This is

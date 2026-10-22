@@ -728,6 +728,26 @@ def test_include_headers_merges_into_response(
     assert response["response_headers"]["X-API-Limit-Remaining"] == "100"
 
 
+def test_include_headers_merges_apikey_limit_header(
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    """``X-APIKEY-Limit-Remaining`` is only sent for API keys with a credit
+    cap, but the client passes it through like any other header."""
+    with NewsDataApiClient("k", include_headers=True, max_retries=1) as c:
+        mocked_responses.get(
+            LATEST_URL,
+            json={"status": "success", "results": []},
+            status=200,
+            headers={
+                "X-API-Limit-Remaining": "100",
+                "X-APIKEY-Limit-Remaining": "25",
+            },
+        )
+        response = c.latest_api()
+    assert isinstance(response, dict)
+    assert response["response_headers"]["X-APIKEY-Limit-Remaining"] == "25"
+
+
 def test_status_error_with_200_raises_api_error(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -766,6 +786,7 @@ def test_401_raises_auth_error(
     with pytest.raises(NewsdataAuthError) as exc_info:
         client.latest_api()
     assert exc_info.value.status_code == 401
+    assert exc_info.value.code == "Unauthorized"
 
 
 def test_403_raises_auth_error(
@@ -833,6 +854,7 @@ def test_429_exhausted_raises_rate_limit_with_retry_after(
     with pytest.raises(NewsdataRateLimitError) as exc_info:
         client.latest_api()
     assert exc_info.value.retry_after == 5
+    assert exc_info.value.code is None
 
 
 @pytest.mark.parametrize("code", ["ApiKeyLimitExceeded", "ApiLimitExceeded"])
@@ -842,13 +864,20 @@ def test_429_quota_exhausted_raises_without_retry(
     mocked_responses: responses.RequestsMock,
     no_sleep: None,
 ) -> None:
-    """A 429 whose error code means exhausted credits is never retried."""
+    """A 429 whose error code means exhausted credits is never retried.
+
+    ``ApiLimitExceeded`` is the account-wide credit pool; ``ApiKeyLimitExceeded``
+    is a per-API-key cap (``max_credit_limit``) on top of it. Either way
+    ``.code`` lets the caller tell which one happened without digging into
+    ``response_body``.
+    """
     body = {"status": "error", "results": {"message": "limit", "code": code}}
     mocked_responses.get(LATEST_URL, json=body, status=429)
     with pytest.raises(NewsdataRateLimitError) as exc_info:
         client.latest_api()
     assert len(mocked_responses.calls) == 1
     assert exc_info.value.response_body == body
+    assert exc_info.value.code == code
 
 
 def test_500_then_200_succeeds(

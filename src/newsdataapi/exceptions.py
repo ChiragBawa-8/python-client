@@ -33,6 +33,9 @@ class NewsdataAPIError(NewsdataException):
     Attributes:
         status_code: HTTP status returned by the API.
         response_body: Parsed JSON body of the error response, when available.
+        code: The API's own error code (``response_body["results"]["code"]``),
+            e.g. ``"ApiLimitExceeded"`` or ``"ApiKeyLimitExceeded"``, when
+            present. ``None`` if the body didn't carry one.
     """
 
     def __init__(
@@ -41,10 +44,12 @@ class NewsdataAPIError(NewsdataException):
         *,
         status_code: int | None = None,
         response_body: dict[str, Any] | None = None,
+        code: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.response_body = response_body
+        self.code = code
 
 
 class NewsdataAuthError(NewsdataAPIError):
@@ -53,6 +58,15 @@ class NewsdataAuthError(NewsdataAPIError):
 
 class NewsdataRateLimitError(NewsdataAPIError):
     """Raised on 429 responses when retries are exhausted.
+
+    A 429 can mean three different things, distinguished by :attr:`code`:
+
+    * ``"ApiLimitExceeded"`` — the account's overall credit pool is exhausted.
+    * ``"ApiKeyLimitExceeded"`` — this specific API key has its own credit
+      cap (``max_credit_limit``), and that cap is exhausted, even though the
+      account's pool may still have credits left.
+    * Anything else (or ``None``) — ordinary rate limiting; back off and
+      retry.
 
     Attributes:
         retry_after: Seconds to wait before retrying, parsed from the
@@ -66,12 +80,14 @@ class NewsdataRateLimitError(NewsdataAPIError):
         *,
         status_code: int | None = 429,
         response_body: dict[str, Any] | None = None,
+        code: str | None = None,
         retry_after: int | None = None,
     ) -> None:
         super().__init__(
             message,
             status_code=status_code,
             response_body=response_body,
+            code=code,
         )
         self.retry_after = retry_after
 
