@@ -169,6 +169,8 @@ ws = NewsDataApiWebSocket(
 ```python
 from newsdataapi import (
     NewsdataAPIError,
+    NewsdataApiKeyLimitExceededError,
+    NewsdataApiLimitExceededError,
     NewsdataAuthError,
     NewsdataNetworkError,
     NewsdataRateLimitError,
@@ -178,15 +180,14 @@ try:
     client.latest_api(q="news")
 except NewsdataAuthError as e:
     print(f"bad API key (HTTP {e.status_code})")
+except NewsdataApiKeyLimitExceededError:
+    print("this API key's own credit cap is exhausted")
+except NewsdataApiLimitExceededError:
+    print("account credit pool is exhausted")
 except NewsdataRateLimitError as e:
-    if e.code == "ApiKeyLimitExceeded":
-        print("this API key's own credit cap is exhausted")
-    elif e.code == "ApiLimitExceeded":
-        print("account credit pool is exhausted")
-    else:
-        print(f"rate limited; retry after {e.retry_after}s")
+    print(f"rate limited; retry after {e.retry_after}s")
 except NewsdataAPIError as e:
-    print(f"API error {e.status_code} ({e.code}): {e.response_body}")
+    print(f"API error {e.status_code}: {e.response_body}")
 except NewsdataNetworkError as e:
     print(f"network failure: {e.original}")
 ```
@@ -195,20 +196,21 @@ The full hierarchy:
 
 ```
 NewsdataException
-├── NewsdataValidationError      (also a ValueError; carries .param)
-├── NewsdataAPIError             (carries .status_code, .response_body, .code)
-│   ├── NewsdataAuthError        (401 / 403)
-│   ├── NewsdataRateLimitError   (429; carries .retry_after)
-│   └── NewsdataServerError      (5xx)
-├── NewsdataNetworkError         (carries .original)
-└── NewsdataWebSocketError       (real-time stream)
+├── NewsdataValidationError              (also a ValueError; carries .param)
+├── NewsdataAPIError                     (carries .status_code, .response_body)
+│   ├── NewsdataAuthError                (401 / 403)
+│   ├── NewsdataRateLimitError           (429; carries .retry_after)
+│   │   ├── NewsdataApiLimitExceededError      (account credit pool exhausted)
+│   │   └── NewsdataApiKeyLimitExceededError   (this API key's own credit cap exhausted)
+│   └── NewsdataServerError              (5xx)
+├── NewsdataNetworkError                 (carries .original)
+└── NewsdataWebSocketError               (real-time stream)
     └── NewsdataWebSocketAuthError  (handshake 401 / 403, or policy-violation close 1008)
 ```
 
-`NewsdataException` is always a valid catch-all.
+`NewsdataApiLimitExceededError` and `NewsdataApiKeyLimitExceededError` are both subclasses of `NewsdataRateLimitError`, so existing code that only catches `NewsdataRateLimitError` keeps working unchanged — catch the specific subclasses only if you want to react differently to each. Neither is ever retried.
 
-`.code` is the API's own error code (``response_body["results"]["code"]``), when present. On a 429 it tells you *why*:
-`"ApiLimitExceeded"` means the account's overall credit pool is exhausted (blocks every API key on the account); `"ApiKeyLimitExceeded"` means this specific API key has its own credit cap (`max_credit_limit`, set per key in the dashboard) and that cap — not the account pool — is exhausted. Either way the request is never retried. Any other 429 (or no code at all) is ordinary rate limiting and is retried with backoff until `max_retries` is reached.
+`NewsdataException` is always a valid catch-all.
 
 When a request succeeds and `include_headers=True`, the response dict's `response_headers` also carries `X-API-Limit-Remaining` (account pool) and, for API keys with a credit cap, `X-APIKEY-Limit-Remaining` (that key's own remaining credits).
 

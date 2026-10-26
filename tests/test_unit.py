@@ -19,6 +19,8 @@ import responses
 from newsdataapi import (
     NewsDataApiClient,
     NewsdataAPIError,
+    NewsdataApiKeyLimitExceededError,
+    NewsdataApiLimitExceededError,
     NewsDataApiWebSocket,
     NewsdataAuthError,
     NewsdataException,
@@ -786,7 +788,6 @@ def test_401_raises_auth_error(
     with pytest.raises(NewsdataAuthError) as exc_info:
         client.latest_api()
     assert exc_info.value.status_code == 401
-    assert exc_info.value.code == "Unauthorized"
 
 
 def test_403_raises_auth_error(
@@ -854,30 +855,31 @@ def test_429_exhausted_raises_rate_limit_with_retry_after(
     with pytest.raises(NewsdataRateLimitError) as exc_info:
         client.latest_api()
     assert exc_info.value.retry_after == 5
-    assert exc_info.value.code is None
 
 
-@pytest.mark.parametrize("code", ["ApiKeyLimitExceeded", "ApiLimitExceeded"])
+@pytest.mark.parametrize(
+    ("code", "expected_exc"),
+    [
+        ("ApiLimitExceeded", NewsdataApiLimitExceededError),
+        ("ApiKeyLimitExceeded", NewsdataApiKeyLimitExceededError),
+    ],
+)
 def test_429_quota_exhausted_raises_without_retry(
     code: str,
+    expected_exc: type[NewsdataRateLimitError],
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
     no_sleep: None,
 ) -> None:
-    """A 429 whose error code means exhausted credits is never retried.
-
-    ``ApiLimitExceeded`` is the account-wide credit pool; ``ApiKeyLimitExceeded``
-    is a per-API-key cap (``max_credit_limit``) on top of it. Either way
-    ``.code`` lets the caller tell which one happened without digging into
-    ``response_body``.
-    """
+    """A 429 whose error code means exhausted credits is never retried,
+    and raises the specific subclass for that code."""
     body = {"status": "error", "results": {"message": "limit", "code": code}}
     mocked_responses.get(LATEST_URL, json=body, status=429)
-    with pytest.raises(NewsdataRateLimitError) as exc_info:
+    with pytest.raises(expected_exc) as exc_info:
         client.latest_api()
+    assert isinstance(exc_info.value, NewsdataRateLimitError)
     assert len(mocked_responses.calls) == 1
     assert exc_info.value.response_body == body
-    assert exc_info.value.code == code
 
 
 def test_500_then_200_succeeds(
